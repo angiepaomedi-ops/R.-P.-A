@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maquetador de Credencial R.P.A. - Bolivia</title>
+    <!-- Tailwind CSS para la interfaz del editor -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html2canvas para permitir descargar la tarjeta como imagen PNG -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Fuentes de Google para emular tipografía oficial (Cinzel/Times para serif y Roboto/Inter para datos) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Inter:wght@400;500;600;700&family=Libre+Baskerville:wght@400;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Estilos específicos para la tarjeta de credencial (Proporción CR80: 85.6mm x 53.98mm -> 640px x 404px) */
+        .id-card-container {
+            width: 640px;
+            height: 404px;
+            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 20px 35px -10px rgba(15, 23, 42, 0.35), 0 0 0 1px rgba(148, 163, 184, 0.4);
+            /* Degradado base azul acero a celeste plateado */
+            background: linear-gradient(105deg, #8ca2c4 0%, #9fb3d1 35%, #b8c7de 70%, #cdd8ea 100%);
+            user-select: none;
+            font-family: 'Roboto', 'Inter', sans-serif;
+            flex-shrink: 0;
+        }
+
+        /* Patrón de líneas de seguridad (Guilloche sutil / microtrama diagonal) */
+        .security-pattern {
+            position: absolute;
+            inset: 0;
+            background-image: 
+                repeating-linear-gradient(
+                    -25deg,
+                    rgba(255, 255, 255, 0.14) 0px,
+                    rgba(255, 255, 255, 0.14) 1px,
+                    transparent 1px,
+                    transparent 4px
+                ),
+                repeating-linear-gradient(
+                    25deg,
+                    rgba(30, 58, 138, 0.06) 0px,
+                    rgba(30, 58, 138, 0.06) 1px,
+                    transparent 1px,
+                    transparent 5px
+                ),
+                radial-gradient(circle at 75% 50%, rgba(255, 255, 255, 0.25) 0%, transparent 65%);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* Efecto de brillo laminado sutil */
+        .laminate-sheen {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0) 45%, rgba(255,255,255,0.08) 100%);
+            pointer-events: none;
+            z-index: 20;
+            border-radius: 16px;
+            box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.45);
+        }
+
+        /* Tipografías institucionales */
+        .font-institutional-serif {
+            font-family: 'Libre Baskerville', 'Times New Roman', serif;
+        }
+
+        .font-rpa-title {
+            font-family: 'Libre Baskerville', Georgia, serif;
+            letter-spacing: 0.04em;
+        }
+
+        /* Código vertical lateral derecho */
+        .vertical-serial-code {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            font-family: 'Roboto', sans-serif;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+        }
+
+        /* Contenedor responsivo para pantallas móviles */
+        .card-scale-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        /* Estilos de impresión */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #credentialCard, #credentialCard * {
+                visibility: visible;
+            }
+            #credentialCard {
+                position: fixed;
+                left: 50%;
+                top: 50%;
+                transform: translate(-50%, -50%) scale(1);
+                box-shadow: none;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-['Inter']">
+
+    <!-- Barra Superior -->
+    <header class="bg-slate-900 text-white shadow-md border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-lg shadow-inner">
+                    ⚖️
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold tracking-tight leading-tight">Editor de Credencial R.P.A.</h1>
+                    <p class="text-xs text-slate-400">Simulador y Maquetador de Diseño - Registro Público de la Abogacía</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2.5">
+                <button onclick="resetToDefault()" class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer">
+                    Restaurar Ejemplo
+                </button>
+                <button onclick="window.print()" class="px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition flex items-center gap-1.5 cursor-pointer">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                    Imprimir
+                </button>
+                <button id="downloadBtn" onclick="downloadCardImage()" class="px-4 py-1.5 text-xs sm:text-sm font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition flex items-center gap-1.5 cursor-pointer">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Descargar PNG
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Notificación Toast (Reemplaza cualquier uso de alert) -->
+    <div id="toastNotification" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none bg-slate-900 text-white px-4 py-3 rounded-xl shadow-xl border border-slate-700 text-sm flex items-center gap-2.5">
+        <span id="toastIcon">✅</span>
+        <span id="toastMessage">Acción completada</span>
+    </div>
+
+    <!-- Contenido Principal -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            
+            <!-- COLUMNA IZQUIERDA: Vista Previa de la Credencial (7 columnas en desktop) -->
+            <div class="lg:col-span-7 flex flex-col items-center">
+                <div class="w-full bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 flex flex-col items-center">
+                    <div class="w-full flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Vista Previa en Tiempo Real (Anverso)
+                        </span>
+                        <span class="text-xs text-slate-400">Escala estándar CR-80 (85.6 × 54 mm)</span>
+                    </div>
+
+                    <!-- Contenedor escalable para móviles -->
+                    <div id="scaleOuter" class="card-scale-wrapper py-2">
+                        <!-- TARJETA DE CREDENCIAL (640px x 404px) -->
+                        <div id="credentialCard" class="id-card-container">
+                            <!-- Capa 1: Patrón de seguridad -->
+                            <div class="security-pattern"></div>
+
+                            <!-- Capa 2: Marca de agua circular gigante con Balanza de la Justicia -->
+                            <svg class="absolute -right-[45px] -bottom-[42px] w-[420px] h-[420px] pointer-events-none z-[2]" viewBox="0 0 300 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <!-- Círculo exterior doble -->
+                                <circle cx="150" cy="150" r="138" stroke="#2c3e5e" stroke-opacity="0.22" stroke-width="5"/>
+                                <circle cx="150" cy="150" r="131" stroke="#2c3e5e" stroke-opacity="0.18" stroke-width="1.5"/>
+                                
+                                <!-- Pilar central de la balanza -->
+                                <path d="M145 78H155L158 245H142L145 78Z" fill="#2c3e5e" fill-opacity="0.22"/>
+                                <!-- Base de la balanza -->
+                                <path d="M110 245H190L198 258H102L110 245Z" fill="#2c3e5e" fill-opacity="0.22"/>
+                                <rect x="92" y="258" width="116" height="8" rx="2" fill="#2c3e5e" fill-opacity="0.22"/>
+                                <!-- Remate superior -->
+                                <polygon points="150,56 158,76 142,76" fill="#2c3e5e" fill-opacity="0.24"/>
+                                
+                                <!-- Brazo horizontal superior de la balanza -->
+                                <path d="M62 88C95 82 125 84 150 84C175 84 205 82 238 88L235 95C205 90 175 91 150 91C125 91 95 90 65 95L62 88Z" fill="#2c3e5e" fill-opacity="0.24"/>
+                                
+                                <!-- Cuerdas y platillo izquierdo -->
+                                <line x1="72" y1="92" x2="46" y2="178" stroke="#2c3e5e" stroke-opacity="0.22" stroke-width="2.2"/>
+                                <line x1="72" y1="92" x2="98" y2="178" stroke="#2c3e5e" stroke-opacity="0.22" stroke-width="2.2"/>
+                                <line x1="72" y1="92" x2="72" y2="178" stroke="#2c3e5e" stroke-opacity="0.16" stroke-width="1.5"/>
+                                <path d="M40 178H104C100 192 88 198 72 198C56 198 44 192 40 178Z" fill="#2c3e5e" fill-opacity="0.24"/>
+                                
+                                <!-- Cuerdas y platillo derecho -->
+                                <line x1="228" y1="92" x2="202" y2="178" stroke="#2c3e5e" stroke-opacity="0.22" stroke-width="2.2"/>
+                                <line x1="228" y1="92" x2="254" y2="178" stroke="#2c3e5e" stroke-opacity="0.22" stroke-width="2.2"/>
+                                <line x1="228" y1="92" x2="228" y2="178" stroke="#2c3e5e" stroke-opacity="0.16" stroke-width="1.5"/>
+                                <path d="M196 178H260C256 192 244 198 228 198C212 198 200 192 196 178Z" fill="#2c3e5e" fill-opacity="0.24"/>
+                            </svg>
+
+                            <!-- Capa 3: Contenido Principal de la Credencial -->
+                            <div class="relative z-10 w-full h-full px-6 pt-3 pb-3 flex flex-col justify-between">
+                                
+                                <!-- SECCIÓN SUPERIOR: Logo RPA (Izq) + Escudo y Ministerio (Centro-Der) -->
+                                <div class="flex items-start justify-between">
+                                    
+                                    <!-- Bloque Superior Izquierdo: R.P.A. -->
+                                    <div class="w-[168px] flex flex-col items-center pt-0.5">
+                                        <div class="font-rpa-title text-[46px] leading-[0.95] text-[#26344a] font-normal tracking-wider drop-shadow-[0_1px_0_rgba(255,255,255,0.4)]">
+                                            R.P.A.
+                                        </div>
+                                        <div class="text-[7.3px] font-bold text-[#1e293b] tracking-[0.03em] mt-1 text-center uppercase">
+                                            REGISTRO PÚBLICO DE LA ABOGACÍA
+                                        </div>
+                                    </div>
+
+                                    <!-- Bloque Superior Centro-Derecha: Escudo + Estado Plurinacional + Ministerio -->
+                                    <div class="flex-1 flex flex-col items-center pl-2 pr-5 -mt-0.5">
+                                        <!-- Escudo Nacional Estilizado en SVG -->
+                                        <svg class="w-[46px] h-[38px] mb-0.5 drop-shadow-sm" viewBox="0 0 120 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <!-- Banderas laterales (Rojo, Amarillo, Verde) -->
+                                            <path d="M26 30L10 22L14 45L28 48Z" fill="#D52B1E"/>
+                                            <path d="M28 42L12 38L16 58L30 58Z" fill="#F9E300"/>
+                                            <path d="M30 54L15 54L20 72L33 68Z" fill="#007934"/>
+                                            
+                                            <path d="M94 30L110 22L106 45L92 48Z" fill="#D52B1E"/>
+                                            <path d="M92 42L108 38L104 58L90 58Z" fill="#F9E300"/>
+                                            <path d="M90 54L105 54L100 72L87 68Z" fill="#007934"/>
+                                            
+                                            <!-- Cañones y fusiles cruzados -->
+                                            <line x1="25" y1="80" x2="95" y2="25" stroke="#475569" stroke-width="2.5" stroke-linecap="round"/>
+                                            <line x1="95" y1="80" x2="25" y2="25" stroke="#475569" stroke-width="2.5" stroke-linecap="round"/>
+                                            
+                                            <!-- Cóndor Andino superior -->
+                                            <path d="M36 16C45 10 54 14 60 18C66 14 75 10 84 16C78 21 70 21 65 20L60 25L55 20C50 21 42 21 36 16Z" fill="#1e293b"/>
+                                            <circle cx="60" cy="14" r="3.5" fill="#1e293b"/>
+                                            
+                                            <!-- Óvalo central del Escudo -->
+                                            <ellipse cx="60" cy="53" rx="22" ry="27" fill="#38bdf8" stroke="#D97706" stroke-width="4.5"/>
+                                            <!-- Cerro Rico de Potosí -->
+                                            <path d="M43 66L58 40L75 66H43Z" fill="#B45309"/>
+                                            <path d="M58 40L64 66H75L58 40Z" fill="#92400E"/>
+                                            <!-- Sol naciente -->
+                                            <circle cx="60" cy="37" r="4.5" fill="#FACC15"/>
+                                            <!-- Llanura verde, alpaca y árbol -->
+                                            <path d="M42 66C48 63 72 63 78 66C75 74 68 78 60 78C52 78 45 74 42 66Z" fill="#15803D"/>
+                                            <circle cx="53" cy="65" r="2.2" fill="#FFFFFF"/>
+                                            <circle cx="68" cy="63" r="3" fill="#166534"/>
+                                            <!-- Borde inferior azul con estrellas -->
+                                            <path d="M41 65C44 75 51 80 60 80C69 80 76 75 79 65" stroke="#1E3A8A" stroke-width="3.5" fill="none"/>
+                                            <!-- Ramas de laurel y olivo -->
+                                            <path d="M36 68C32 55 34 40 40 30" stroke="#15803D" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+                                            <path d="M84 68C88 55 86 40 80 30" stroke="#15803D" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+                                        </svg>
+
+                                        <!-- Estado Plurinacional de Bolivia -->
+                                        <div class="text-[11px] font-bold text-[#1e3a8a] tracking-[0.04em] border-b-[1.5px] border-[#1e3a8a] pb-[1px] px-1 leading-tight">
+                                            ESTADO PLURINACIONAL DE BOLIVIA
+                                        </div>
+
+                                        <!-- Ministerio de Justicia -->
+                                        <div class="font-institutional-serif text-[21.5px] text-[#1e335c] tracking-[0.02em] leading-none mt-1.5 font-normal">
+                                            <span class="text-[25px]">M</span>INISTERIO DE <span class="text-[25px]">J</span>USTICIA
+                                        </div>
+
+                                        <!-- Barra Tricolor con la letra "Y" en el centro -->
+                                        <div class="w-full max-w-[330px] flex items-center justify-center gap-2 my-[2px]">
+                                            <!-- Tricolor Izquierda (Rojo - Amarillo - Verde) -->
+                                            <div class="flex-1 h-[3px] flex rounded-full overflow-hidden">
+                                                <div class="w-1/3 bg-[#d52b1e]"></div>
+                                                <div class="w-1/3 bg-[#f9e300]"></div>
+                                                <div class="w-1/3 bg-[#007934]"></div>
+                                            </div>
+                                            <span class="font-institutional-serif text-[11px] font-bold text-[#1e335c] leading-none">Y</span>
+                                            <!-- Tricolor Derecha (Rojo - Amarillo - Verde) -->
+                                            <div class="flex-1 h-[3px] flex rounded-full overflow-hidden">
+                                                <div class="w-1/3 bg-[#d52b1e]"></div>
+                                                <div class="w-1/3 bg-[#f9e300]"></div>
+                                                <div class="w-1/3 bg-[#007934]"></div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Transparencia Institucional -->
+                                        <div class="font-institutional-serif text-[16.5px] text-[#1e335c] tracking-[0.02em] leading-none">
+                                            <span class="text-[19.5px]">T</span>RANSPARENCIA <span class="text-[19.5px]">I</span>NSTITUCIONAL
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- SECCIÓN MEDIA: Fotografía + Firma Titular (Izq) y Datos Personales (Der) -->
+                                <div class="flex items-start mt-1 flex-1">
+                                    
+                                    <!-- Columna Izquierda: Foto Carnet + Caja de Firma -->
+                                    <div class="w-[168px] flex flex-col items-center shrink-0">
+                                        <!-- Recuadro Fotografía -->
+                                        <div onclick="document.getElementById('photoInput').click()" title="Haz clic para cambiar la fotografía" class="group relative w-[158px] h-[178px] bg-[#e2e8f0] shadow-sm overflow-hidden cursor-pointer border border-white/60">
+                                            <img id="cardPhoto" src="" alt="Fotografía Titular" class="w-full h-full object-cover object-top">
+                                            <!-- Overlay hover -->
+                                            <div class="absolute inset-0 bg-slate-900/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-xs font-medium p-2 text-center">
+                                                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                                Cambiar Foto
+                                            </div>
+                                        </div>
+
+                                        <!-- Recuadro Firma del Titular (Fondo blanco justo debajo de la foto) -->
+                                        <div onclick="document.getElementById('signatureSection').scrollIntoView({behavior: 'smooth'})" title="Haz clic para editar o dibujar la firma" class="group relative w-[158px] h-[54px] bg-white/95 shadow-sm flex items-center justify-center overflow-visible cursor-pointer border-t border-slate-200">
+                                            <!-- Firma SVG por defecto -->
+                                            <svg id="defaultHolderSignature" class="w-[152px] h-[66px] -mt-1 overflow-visible pointer-events-none" viewBox="0 0 220 90" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M58 24C44 22 28 32 29 52C30 68 46 66 56 54C61 48 63 39 63 39C63 39 60 62 66 62C71 62 76 47 76 47C76 47 75 61 81 61C86 61 92 46 92 46L90 61M81 36L104 34M99 18L94 64C94 64 103 48 109 48C114 48 112 61 118 61C124 61 129 49 129 49C129 49 128 60 134 60C140 60 146 47 146 47C146 47 146 60 153 59C161 58 175 42 175 32C175 23 163 23 155 34C147 45 148 63 160 64C172 65 184 53 181 42C178 33 164 36 157 47C150 58 145 76 136 82C127 88 94 74 42 74" stroke="#1e2f6e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                                            </svg>
+                                            <!-- Imagen de firma personalizada (oculta por defecto) -->
+                                            <img id="customHolderSignatureImg" src="" alt="Firma Titular" class="hidden max-w-[150px] max-h-[50px] object-contain pointer-events-none">
+                                        </div>
+                                    </div>
+
+                                    <!-- Columna Central/Derecha: Campos de Datos + Firma Ministro -->
+                                    <div class="flex-1 pl-6 pr-6 pt-6 flex flex-col justify-between h-full">
+                                        
+                                        <!-- Tabla de Datos Personales -->
+                                        <div class="space-y-2.5 text-[#1a202c]">
+                                            <div class="grid grid-cols-[136px_1fr] items-baseline">
+                                                <span class="text-[14.5px] font-medium text-[#1e293b] text-right pr-3">Nombres:</span>
+                                                <span id="dispNombres" class="text-[15.5px] font-medium tracking-[0.02em] uppercase text-[#0f172a] leading-tight">CARLOS DENNIS</span>
+                                            </div>
+                                            
+                                            <div class="grid grid-cols-[136px_1fr] items-baseline">
+                                                <span class="text-[14.5px] font-medium text-[#1e293b] text-right pr-3">Apellidos:</span>
+                                                <span id="dispApellidos" class="text-[15.5px] font-medium tracking-[0.02em] uppercase text-[#0f172a] leading-tight">CONDE ROJAS</span>
+                                            </div>
+                                            
+                                            <div class="grid grid-cols-[136px_1fr] items-baseline">
+                                                <span class="text-[14.5px] font-medium text-[#1e293b] text-right pr-3">Matricula RPA N°:</span>
+                                                <span id="dispMatricula" class="text-[15.5px] font-medium tracking-[0.03em] uppercase text-[#0f172a] leading-tight">3422941CDCR</span>
+                                            </div>
+
+                                            <!-- Título Profesional -->
+                                            <div class="grid grid-cols-[136px_1fr] items-baseline pt-1">
+                                                <span></span>
+                                                <span id="dispTitulo" class="text-[15.5px] font-medium tracking-[0.04em] uppercase text-[#0f172a]">ABOGADO</span>
+                                            </div>
+                                        </div>
+
+                                        <!-- Bloque Firma del Ministro -->
+                                        <div class="flex flex-col items-center mt-1 mr-4">
+                                            <!-- Rúbrica SVG del Ministro -->
+                                            <svg class="w-[195px] h-[52px] -mb-2 overflow-visible" viewBox="0 0 260 75" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M52 24C84 15 142 8 188 10C156 17 75 34 45 48C85 42 182 22 216 20C185 31 112 48 92 56C125 50 186 38 205 38C185 46 135 58 118 63C144 59 178 52 192 52" stroke="#1e2f6e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                                <path d="M98 14C94 28 89 52 87 65" stroke="#1e2f6e" stroke-width="1.8" stroke-linecap="round"/>
+                                            </svg>
+                                            <div id="dispMinistro" class="text-[11px] font-bold italic text-[#0f172a] leading-tight text-center">
+                                                Dr. Iván Manolo Lima Magne
+                                            </div>
+                                            <div class="text-[9.2px] font-bold text-[#1e293b] leading-[1.15] text-center uppercase tracking-[0.01em]">
+                                                MINISTRO DE JUSTICIA Y<br>
+                                                TRANSPARENCIA INSTITUCIONAL
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                </div>
+
+                                <!-- SECCIÓN INFERIOR: Fechas (Izquierda) y Serie (Derecha) -->
+                                <div class="flex items-end justify-between pt-1 pb-0.5">
+                                    <!-- Fechas Emisión y Validez -->
+                                    <div class="space-y-1 pl-3 text-[#0f172a]">
+                                        <div class="flex items-baseline text-[13.5px]">
+                                            <span class="font-medium w-[112px] text-right pr-2 text-[#1e293b]">Fecha Emisión:</span>
+                                            <span id="dispEmision" class="font-medium tracking-wide">25/08/2022</span>
+                                        </div>
+                                        <div class="flex items-baseline text-[13.5px]">
+                                            <span class="font-medium w-[112px] text-right pr-2 text-[#1e293b]">Válido hasta:</span>
+                                            <span id="dispValido" class="font-medium tracking-wide">25/08/2028</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Serie -->
+                                    <div class="pr-4 pb-0.5 flex items-baseline gap-2 text-[#1e335c]">
+                                        <span class="text-[14px] font-medium tracking-[0.08em]">SERIE:</span>
+                                        <span id="dispSerie" class="text-[15.5px] font-semibold">C</span>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <!-- Código Vertical Lateral Derecho (Rotado 90 grados) -->
+                            <div class="absolute right-[10px] top-0 bottom-0 flex items-center justify-center z-10 pointer-events-none">
+                                <span id="dispCodigoLateral" class="vertical-serial-code text-[15.5px] text-[#1e335c]/90">
+                                    70037MJLP01
+                                </span>
+                            </div>
+
+                            <!-- Capa Superior: Brillo laminado -->
+                            <div class="laminate-sheen"></div>
+                        </div>
+                    </div>
+
+                    <!-- Barra de herramientas rápida debajo de la tarjeta -->
+                    <div class="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500">
+                        <span class="inline-flex items-center gap-1 bg-slate-100 px-2.5 py-1 rounded-md">
+                            💡 <strong>Tip:</strong> Haz clic directamente sobre la foto o la firma en la tarjeta para modificarlas.
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- COLUMNA DERECHA: Panel de Control y Personalización (5 columnas en desktop) -->
+            <div class="lg:col-span-5 space-y-5">
+                
+                <!-- Tarjeta 1: Datos del Titular -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-slate-800 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2.5">
+                        <span class="w-6 h-6 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center text-xs">1</span>
+                        Datos del Profesional
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Nombres</label>
+                            <input type="text" id="inputNombres" value="CARLOS DENNIS" oninput="updateCardText('dispNombres', this.value)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase outline-none transition">
+                        </div>
+                        
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Apellidos</label>
+                            <input type="text" id="inputApellidos" value="CONDE ROJAS" oninput="updateCardText('dispApellidos', this.value)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase outline-none transition">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Matrícula RPA N°</label>
+                            <input type="text" id="inputMatricula" value="3422941CDCR" oninput="updateCardText('dispMatricula', this.value)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase outline-none transition">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Título / Cargo</label>
+                            <input type="text" id="inputTitulo" value="ABOGADO" oninput="updateCardText('dispTitulo', this.value)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase outline-none transition" list="titulosList">
+                            <datalist id="titulosList">
+                                <option value="ABOGADO">
+                                <option value="ABOGADA">
+                            </datalist>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha Emisión</label>
+                            <input type="text" id="inputEmision" value="25/08/2022" oninput="updateCardText('dispEmision', this.value, false)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Válido hasta</label>
+                            <input type="text" id="inputValido" value="25/08/2028" oninput="updateCardText('dispValido', this.value, false)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 2: Fotografía y Firma del Titular -->
+                <div id="signatureSection" class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-slate-800 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2.5">
+                        <span class="w-6 h-6 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center text-xs">2</span>
+                        Fotografía y Firma del Titular
+                    </h2>
+
+                    <!-- Subir Foto -->
+                    <div class="mb-5">
+                        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Fotografía Tipo Carnet</label>
+                        <div class="flex items-center gap-3">
+                            <input type="file" id="photoInput" accept="image/*" class="hidden" onchange="handlePhotoUpload(event)">
+                            <button onclick="document.getElementById('photoInput').click()" class="flex-1 py-2 px-3 bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 rounded-lg text-xs font-medium text-slate-700 flex items-center justify-center gap-2 transition cursor-pointer">
+                                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                Subir Fotografía...
+                            </button>
+                            <button onclick="restoreDefaultPhoto()" class="py-2 px-3 bg-slate-100 hover:bg-slate-200 rounded-lg text-xs font-medium text-slate-600 transition cursor-pointer">
+                                Ejemplo
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Pestañas de Firma: Dibujar o Subir -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-xs font-semibold text-slate-600">Firma del Titular</label>
+                            <div class="flex bg-slate-100 p-0.5 rounded-lg text-xs">
+                                <button id="tabDrawSig" onclick="switchSignatureTab('draw')" class="px-2.5 py-1 rounded-md bg-white text-slate-800 font-medium shadow-xs transition cursor-pointer">Dibujar</button>
+                                <button id="tabUploadSig" onclick="switchSignatureTab('upload')" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-800 font-medium transition cursor-pointer">Subir PNG</button>
+                            </div>
+                        </div>
+
+                        <!-- Panel Dibujar Firma en Canvas -->
+                        <div id="drawSigPanel" class="space-y-2">
+                            <div class="relative border border-slate-300 rounded-lg bg-slate-50 overflow-hidden">
+                                <canvas id="signatureCanvas" width="380" height="110" class="w-full h-[100px] touch-none cursor-crosshair block bg-white"></canvas>
+                                <span class="absolute bottom-1.5 right-2 text-[10px] text-slate-400 pointer-events-none">Dibuja tu firma aquí con el ratón o dedo</span>
+                            </div>
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-xs text-slate-500">Tinta:</span>
+                                    <button onclick="setPenColor('#1e2f6e')" class="w-5 h-5 rounded-full bg-[#1e2f6e] ring-2 ring-offset-1 ring-blue-400 cursor-pointer" title="Azul Bolígrafo"></button>
+                                    <button onclick="setPenColor('#0f172a')" class="w-5 h-5 rounded-full bg-[#0f172a] cursor-pointer" title="Negro"></button>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="clearSignatureCanvas()" class="px-2.5 py-1 text-xs font-medium text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-md transition cursor-pointer">
+                                        Limpiar
+                                    </button>
+                                    <button onclick="restoreDefaultSignature()" class="px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition cursor-pointer">
+                                        Firma Original
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Panel Subir Imagen de Firma -->
+                        <div id="uploadSigPanel" class="hidden space-y-2">
+                            <input type="file" id="sigFileInput" accept="image/*" class="hidden" onchange="handleSignatureUpload(event)">
+                            <button onclick="document.getElementById('sigFileInput').click()" class="w-full py-3 px-4 bg-slate-50 hover:bg-slate-100 border border-dashed border-slate-300 rounded-lg text-xs font-medium text-slate-700 flex flex-col items-center justify-center gap-1 transition cursor-pointer">
+                                <span>Seleccionar imagen de firma (preferiblemente fondo transparente)</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tarjeta 3: Datos Institucionales y Serie -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-slate-800 mb-4 flex items-center gap-2 border-b border-slate-100 pb-2.5">
+                        <span class="w-6 h-6 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center text-xs">3</span>
+                        Autoridad y Control Institucional
+                    </h2>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                        <div class="sm:col-span-3">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre del Ministro/a</label>
+                            <input type="text" id="inputMinistro" value="Dr. Iván Manolo Lima Magne" oninput="updateCardText('dispMinistro', this.value, false)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition">
+                        </div>
+
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Código Vertical Lateral</label>
+                            <input type="text" id="inputCodigoLateral" value="70037MJLP01" oninput="updateCardText('dispCodigoLateral', this.value)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase outline-none transition">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">Serie</label>
+                            <input type="text" id="inputSerie" value="C" maxlength="4" oninput="updateCardText('dispSerie', this.value)"
+                                class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 uppercase outline-none transition">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // =========================================================================
+        // 1. GENERACIÓN DE RETRATO DE EJEMPLO EN SVG (Sin dependencias externas)
+        // =========================================================================
+        function getDefaultPortraitDataURI() {
+            const svg = `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 340" width="300" height="340">
+                <defs>
+                    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#e5e7eb"/>
+                        <stop offset="100%" stop-color="#d1d5db"/>
+                    </linearGradient>
+                    <linearGradient id="skinGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stop-color="#e0a986"/>
+                        <stop offset="100%" stop-color="#c98e6b"/>
+                    </linearGradient>
+                    <linearGradient id="suitGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stop-color="#272b33"/>
+                        <stop offset="100%" stop-color="#14171c"/>
+                    </linearGradient>
+                </defs>
+                <!-- Fondo estudio claro -->
+                <rect width="300" height="340" fill="url(#bgGrad)"/>
+                
+                <!-- Cuello -->
+                <path d="M115 205 L185 205 L195 265 L105 265 Z" fill="#c68a67"/>
+                <path d="M115 205 Q150 228 185 205 L185 225 Q150 242 115 225 Z" fill="#a86f4e" opacity="0.45"/>
+
+                <!-- Camisa Blanca -->
+                <path d="M90 245 L150 340 L210 245 L185 232 L150 268 L115 232 Z" fill="#f8fafc"/>
+                <!-- Solapas de camisa -->
+                <polygon points="115,232 150,268 130,285 104,250" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+                <polygon points="185,232 150,268 170,285 196,250" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+
+                <!-- Corbata a cuadros (azul marino / gris / beige) -->
+                <polygon points="141,263 159,263 155,280 145,280" fill="#1e293b"/>
+                <polygon points="145,280 155,280 163,340 137,340" fill="#1e293b"/>
+                <rect x="142" y="286" width="16" height="8" fill="#cbd5e1" opacity="0.7"/>
+                <rect x="140" y="304" width="20" height="9" fill="#94a3b8" opacity="0.6"/>
+                <rect x="139" y="322" width="22" height="9" fill="#cbd5e1" opacity="0.7"/>
+                <line x1="150" y1="263" x2="150" y2="340" stroke="#0f172a" stroke-width="2" opacity="0.5"/>
+
+                <!-- Traje / Saco oscuro -->
+                <path d="M15 340 C20 275 55 252 105 242 L138 340 Z" fill="url(#suitGrad)"/>
+                <path d="M285 340 C280 275 245 252 195 242 L162 340 Z" fill="url(#suitGrad)"/>
+                <!-- Solapas del saco -->
+                <polygon points="105,242 122,240 142,340 124,340" fill="#323842"/>
+                <polygon points="195,242 178,240 158,340 176,340" fill="#323842"/>
+
+                <!-- Orejas -->
+                <ellipse cx="94" cy="145" rx="9" ry="20" fill="#cf9370"/>
+                <ellipse cx="206" cy="145" rx="9" ry="20" fill="#cf9370"/>
+
+                <!-- Rostro -->
+                <path d="M96 115 C96 72 204 72 204 115 C204 175 186 216 150 218 C114 216 96 175 96 115 Z" fill="url(#skinGrad)"/>
+
+                <!-- Cabello -->
+                <path d="M94 128 C90 88 104 52 150 52 C196 52 210 88 206 128 C203 105 196 86 184 82 C165 76 135 76 116 82 C104 86 97 105 94 128 Z" fill="#1f2329"/>
+                <path d="M104 82 C125 66 175 66 196 82 C185 60 115 60 104 82 Z" fill="#2c313a"/>
+
+                <!-- Cejas -->
+                <path d="M111 122 Q126 117 140 122" stroke="#22252a" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+                <path d="M160 122 Q174 117 189 122" stroke="#22252a" stroke-width="4.5" stroke-linecap="round" fill="none"/>
+
+                <!-- Ojos -->
+                <ellipse cx="126" cy="133" rx="9" ry="5" fill="#ffffff"/>
+                <circle cx="126" cy="133" r="4" fill="#231915"/>
+                <circle cx="125" cy="132" r="1.2" fill="#ffffff"/>
+
+                <ellipse cx="174" cy="133" rx="9" ry="5" fill="#ffffff"/>
+                <circle cx="174" cy="133" r="4" fill="#231915"/>
+                <circle cx="173" cy="132" r="1.2" fill="#ffffff"/>
+
+                <!-- Nariz -->
+                <path d="M150 132 L146 161 Q150 165 154 161" stroke="#a66c4c" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+                <path d="M141 162 Q150 167 159 162" stroke="#9e6344" stroke-width="2" stroke-linecap="round" fill="none"/>
+
+                <!-- Boca / Expresión serena -->
+                <path d="M133 183 Q150 186 167 183" stroke="#9c5949" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+                <path d="M138 189 Q150 192 162 189" stroke="#b57664" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+            </svg>`;
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        }
+
+        // =========================================================================
+        // 2. ACTUALIZACIÓN DE TEXTOS Y NOTIFICACIONES
+        // =========================================================================
+        function showToast(message, icon = '✅') {
+            const toast = document.getElementById('toastNotification');
+            document.getElementById('toastMessage').textContent = message;
+            document.getElementById('toastIcon').textContent = icon;
+            
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+            
+            clearTimeout(window.toastTimer);
+            window.toastTimer = setTimeout(() => {
+                toast.classList.remove('translate-y-0', 'opacity-100');
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        function updateCardText(targetId, value, forceUppercase = true) {
+            const el = document.getElementById(targetId);
+            if (!el) return;
+            const cleanVal = value.trim() === '' ? '\u00A0' : (forceUppercase ? value.toUpperCase() : value);
+            el.textContent = cleanVal;
+        }
+
+        // =========================================================================
+        // 3. GESTIÓN DE FOTOGRAFÍA
+        // =========================================================================
+        function restoreDefaultPhoto() {
+            document.getElementById('cardPhoto').src = getDefaultPortraitDataURI();
+        }
+
+        function handlePhotoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('cardPhoto').src = e.target.result;
+                showToast('Fotografía actualizada correctamente', '📸');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // =========================================================================
+        // 4. GESTIÓN DE FIRMA (DIBUJO EN CANVAS + CARGA DE IMAGEN)
+        // =========================================================================
+        const canvas = document.getElementById('signatureCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let penColor = '#1e2f6e';
+
+        // Configuración inicial del pincel
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = penColor;
+
+        function setPenColor(color) {
+            penColor = color;
+            ctx.strokeStyle = penColor;
+        }
+
+        function getCanvasCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            if (e.touches && e.touches.length > 0) {
+                return {
+                    x: (e.touches[0].clientX - rect.left) * scaleX,
+                    y: (e.touches[0].clientY - rect.top) * scaleY
+                };
+            }
+            return {
+                x: (e.clientX - rect.left) * scaleX,
+                y: (e.clientY - rect.top) * scaleY
+            };
+        }
+
+        function startDrawing(e) {
+            isDrawing = true;
+            const coords = getCanvasCoords(e);
+            ctx.beginPath();
+            ctx.moveTo(coords.x, coords.y);
+            if (e.type === 'touchstart') e.preventDefault();
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const coords = getCanvasCoords(e);
+            ctx.lineTo(coords.x, coords.y);
+            ctx.stroke();
+            if (e.type === 'touchmove') e.preventDefault();
+        }
+
+        function stopDrawing() {
+            if (!isDrawing) return;
+            isDrawing = false;
+            ctx.closePath();
+            applyCanvasSignatureToCard();
+        }
+
+        // Eventos Mouse y Touch para el canvas de firma
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        canvas.addEventListener('touchstart', startDrawing, { passive: false });
+        canvas.addEventListener('touchmove', draw, { passive: false });
+        canvas.addEventListener('touchend', stopDrawing);
+
+        function applyCanvasSignatureToCard() {
+            const dataURL = canvas.toDataURL('image/png');
+            const imgEl = document.getElementById('customHolderSignatureImg');
+            const defaultSvg = document.getElementById('defaultHolderSignature');
+            
+            imgEl.src = dataURL;
+            imgEl.classList.remove('hidden');
+            defaultSvg.classList.add('hidden');
+        }
+
+        function clearSignatureCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            applyCanvasSignatureToCard();
+        }
+
+        function restoreDefaultSignature() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const imgEl = document.getElementById('customHolderSignatureImg');
+            const defaultSvg = document.getElementById('defaultHolderSignature');
+            
+            imgEl.classList.add('hidden');
+            defaultSvg.classList.remove('hidden');
+            showToast('Firma de ejemplo restaurada', '✍️');
+        }
+
+        function handleSignatureUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const imgEl = document.getElementById('customHolderSignatureImg');
+                const defaultSvg = document.getElementById('defaultHolderSignature');
+                
+                imgEl.src = e.target.result;
+                imgEl.classList.remove('hidden');
+                defaultSvg.classList.add('hidden');
+                showToast('Firma cargada en la credencial', '✍️');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function switchSignatureTab(tab) {
+            const drawPanel = document.getElementById('drawSigPanel');
+            const uploadPanel = document.getElementById('uploadSigPanel');
+            const tabDraw = document.getElementById('tabDrawSig');
+            const tabUpload = document.getElementById('tabUploadSig');
+
+            if (tab === 'draw') {
+                drawPanel.classList.remove('hidden');
+                uploadPanel.classList.add('hidden');
+                tabDraw.className = 'px-2.5 py-1 rounded-md bg-white text-slate-800 font-medium shadow-xs transition cursor-pointer';
+                tabUpload.className = 'px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-800 font-medium transition cursor-pointer';
+            } else {
+                drawPanel.classList.add('hidden');
+                uploadPanel.classList.remove('hidden');
+                tabUpload.className = 'px-2.5 py-1 rounded-md bg-white text-slate-800 font-medium shadow-xs transition cursor-pointer';
+                tabDraw.className = 'px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-800 font-medium transition cursor-pointer';
+            }
+        }
+
+        // =========================================================================
+        // 5. RESTAURAR VALORES POR DEFECTO Y RESPONSIVIDAD
+        // =========================================================================
+        function resetToDefault() {
+            const defaults = {
+                inputNombres: ['dispNombres', 'CARLOS DENNIS', true],
+                inputApellidos: ['dispApellidos', 'CONDE ROJAS', true],
+                inputMatricula: ['dispMatricula', '3422941CDCR', true],
+                inputTitulo: ['dispTitulo', 'ABOGADO', true],
+                inputEmision: ['dispEmision', '25/08/2022', false],
+                inputValido: ['dispValido', '25/08/2028', false],
+                inputMinistro: ['dispMinistro', 'Dr. Iván Manolo Lima Magne', false],
+                inputCodigoLateral: ['dispCodigoLateral', '70037MJLP01', true],
+                inputSerie: ['dispSerie', 'C', true]
+            };
+
+            for (const [inputId, [dispId, val, upper]] of Object.entries(defaults)) {
+                document.getElementById(inputId).value = val;
+                updateCardText(dispId, val, upper);
+            }
+
+            restoreDefaultPhoto();
+            restoreDefaultSignature();
+            showToast('Todos los campos fueron restaurados al modelo original', '🔄');
+        }
+
+        // Escalado responsivo automático de la tarjeta en pantallas menores a 680px
+        function adjustCardScale() {
+            const outer = document.getElementById('scaleOuter');
+            const card = document.getElementById('credentialCard');
+            if (!outer || !card) return;
+
+            const availableWidth = outer.clientWidth;
+            const cardWidth = 640;
+            const cardHeight = 404;
+
+            if (availableWidth < cardWidth) {
+                const scale = availableWidth / cardWidth;
+                card.style.transform = `scale(${scale})`;
+                card.style.transformOrigin = 'top center';
+                outer.style.height = `${cardHeight * scale + 16}px`;
+            } else {
+                card.style.transform = 'none';
+                outer.style.height = 'auto';
+            }
+        }
+
+        // =========================================================================
+        // 6. EXPORTACIÓN A IMAGEN PNG DE ALTA RESOLUCIÓN
+        // =========================================================================
+        async function downloadCardImage() {
+            const btn = document.getElementById('downloadBtn');
+            const card = document.getElementById('credentialCard');
+            const originalTransform = card.style.transform;
+            
+            try {
+                btn.disabled = true;
+                btn.innerHTML = 'Generando PNG...';
+                
+                // Quitar temporalmente cualquier escala móvil para capturar a resolución completa (2x)
+                card.style.transform = 'none';
+
+                const canvasResult = await html2canvas(card, {
+                    scale: 2,
+                    useCORS: true,
+                    backgroundColor: null,
+                    logging: false
+                });
+
+                const link = document.createElement('a');
+                const matricula = document.getElementById('inputMatricula').value.trim() || 'RPA';
+                link.download = `Credencial_RPA_${matricula}.png`;
+                link.href = canvasResult.toDataURL('image/png');
+                link.click();
+
+                showToast('Credencial descargada en formato PNG', '📥');
+            } catch (error) {
+                console.error('Error al exportar imagen:', error);
+                showToast('No se pudo generar la imagen. Intenta usar Imprimir.', '⚠️');
+            } finally {
+                card.style.transform = originalTransform;
+                btn.disabled = false;
+                btn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Descargar PNG
+                `;
+            }
+        }
+
+        // Inicialización al cargar la página
+        window.addEventListener('load', () => {
+            restoreDefaultPhoto();
+            adjustCardScale();
+        });
+        window.addEventListener('resize', adjustCardScale);
+    </script>
+</body>
+</html>
